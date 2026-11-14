@@ -780,7 +780,7 @@ pub fn edit_projects(){
             }
         }
         "b" => {
-            println!{"back to main menu"};
+            //println!{"back to main menu"};
 
         },
         _ => {
@@ -836,8 +836,9 @@ pub fn view_projects (addiotional: &str) {
 }
 
 pub fn settings () {
-    println!("  \x1b[1;94mn:\x1b[0m adjust notifications");
-    println!("  \x1b[1;94mm:\x1b[0m adjust manual input");
+    println!("\n  \x1b[107;30mEnter the number of the setting you want to adjust.\x1b[0m");
+    println!("  \x1b[1;94mn:\x1b[0m notifications  [\x1b[92mon\x1b[0m/off]");
+    println!("  \x1b[1;94mm:\x1b[0m manual input   [on/\x1b[95moff\x1b[0m]");
     println!("  \x1b[1;94mb:\x1b[0m go back");
 }
 

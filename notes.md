@@ -4,6 +4,7 @@
 - Settings einbauen
 - > manual input -> struct anpassen
 - > notifications -> struct anpassen
+- > logging
 - ssh einbauen -> struct anpassen
 - die "pick_folder" Funktion muss leider für alle OS einzeln gebaut werden damit sie ordentlich funktioniert
 
@@ -16,6 +17,8 @@
 - Verschlüsselung iwie unterstützen maybe 
 - passkey für einlogen ins programm
 - **archiv mode:** es werden komprimierte datein gesichert + option das mehrere snapshots gespeichert werden
+- Magiv wormhole crate: https://docs.rs/magic-wormhole/latest/magic_wormhole/ 
+- > besser geeignet für übertragung von datein
 
 # Knowledge
 - what is Serealization: https://medium.com/@murataslan1/serialization-and-deserialization-in-rust-a-comprehensive-guide-3eb249ae8ac6
