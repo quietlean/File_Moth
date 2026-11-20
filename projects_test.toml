@@ -1,10 +1,15 @@
 [general]
-amount = 10
-version = "0.1"
-developer = "quietlean"
+amount = 2
+daytime = []
+weekday = []
+monthday = []
+
+[settings]
+notifications = 1
+manual_input = 0
 
 [project]
-name = ["111", "222222", "3333", "rtrtre", "ertrt", "trhgjdghfj", "z", "ii", "t", "zh"]
-origin = ["/Users/lengather/Pictures/moth-test/uni", "/Users/lengather/Pictures/moth-test/Bones", "/Users/lengather/Pictures/moth-test/furz", "/Users/lengather/Pictures/moth-test/Bones", "/Users/lengather/Pictures/furz", "/Users/lengather/Pictures/furz", "/Users/lengather/Pictures/furz", "/Users/lengather/Pictures/furz", "/Users/lengather/Pictures/moth-test/uni", "/Users/lengather/Pictures/moth-test/Bones"]
-destination = [["/Users/lengather/Pictures/moth-test/dest-1", "/Users/lengather/Pictures/moth-test/dest-2"], ["/Users/lengather/Pictures/moth-test/dest-2"], ["/Users/lengather/Pictures/moth-test/dest-3"], ["/Users/lengather/Pictures/moth-test/dest-3"], ["/Users/lengather/Pictures/moth-test/dest-3"], ["/Users/lengather/Pictures/moth-test/dest-1"], ["/Users/lengather/Pictures/moth-test/furz"], ["/Users/lengather/Pictures/Bones"], ["/Users/lengather/Pictures/moth-test/dest-2"], ["/Users/lengather/Pictures/moth-test/dest-2", "/Users/lengather/Pictures/moth-test/dest-1"]]
-daemon = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+name = ["565677890", "Best project"]
+origin = ["/Users/lengather/Pictures/moth-test/uni", "/Users/lengather/Pictures/moth-test/furz"]
+destination = [[["1", "/Users/lengather/Pictures/moth-test/Bones"], ["2", "lens-blade"]], [["1", "/Users/lengather/Pictures/moth-test/dest-1"], ["2", "lens-blade"], ["1", "/Users/lengather/Pictures/moth-test/dest-3"]]]
+daemon = [1, 1]

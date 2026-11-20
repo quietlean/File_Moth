@@ -1,16 +1,18 @@
 //use std::io::{self};
 //use std::{process};
+mod external;
+//use crate::external::com;
 
 use crate::utils::{art, edit_projects, file_check, menu_print, menu_print_intro, safe_dir, view_projects, open_toml};
+
 
 // Functions are in "utils.rs".
 mod utils;
 
 fn main() {
 
-    art();
-
     file_check();
+    art();
 
     menu_print_intro();
 

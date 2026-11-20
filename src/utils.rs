@@ -14,7 +14,11 @@ use serde::Deserialize;
 use toml_edit::{Array, DocumentMut, Item, Table, Value}; //, value
 use mac_notification_sys::*; // Sending System Notifications
 //use rfd; // Opening Finder to select Folder
-use native_dialog::{DialogBuilder}; // Also a crate to display file choosers
+//use native_dialog::{DialogBuilder}; // Also a crate to display file choosers
+
+
+//mod external;
+use crate::external::com;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -25,16 +29,23 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 struct General {
     amount: i64,
-    version: String,
-    developer: String,
+    daytime: Vec<i64>,
+    weekday: Vec<i64>,
+    monthday: Vec<i64>
 }
 
-// gotta change them to vectors
 #[derive(Debug, Clone, serde::Serialize, Deserialize)]
-struct Project {
-    name: Vec<String>,
-    origin: Vec<String>,
-    destination: Vec<Vec<String>>,
+struct Settings {
+    notifications: i64,
+    manual_input: i64
+}
+
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+pub struct Project {
+    pub name: Vec<String>,
+    pub origin: Vec<String>,
+    //destination: Vec<Vec<String>>,
+    pub destination: Vec<Vec<Vec<String>>>,
     daemon: Vec<i64>
 }
 
@@ -193,13 +204,16 @@ pub fn file_check(){
     }
 }
 
+// Function that safes the projects
 pub fn safe_dir (all: &str, config: Config){
 
+    // check if there are any projects
     if config.general.amount == 0 {
         println!("You don't have any projects.");
         return;
     }
 
+    // Overview of all projects
     if all == "n" {
         println!("\n\x1b[107;30mProject Overview:\x1b[0m");
         view_projects("n");
@@ -220,9 +234,9 @@ pub fn safe_dir (all: &str, config: Config){
 
     // The index of the project in the array
     let mut index = 0;
-    let mut count = 0;
+    let count;
 
-    // Input is only taken when only one project is safed
+    // when user chooses to only safe one project
     if all == "n" {
         let mut input = print_input("\x1b[93;1mEnter the Number of the project you want to safe.\x1b[0m");
 
@@ -243,6 +257,7 @@ pub fn safe_dir (all: &str, config: Config){
                     }
                      // index is calculated
                     index = num - 1;
+                    count = index;
                     break;
                 }
                 Err(_) => {
@@ -258,18 +273,36 @@ pub fn safe_dir (all: &str, config: Config){
     while index <= count {
         for dest in &config.project.destination[index] {
 
-            // copy via rsync
-            let out = match Command::new("rsync")
-                .args(["-a", "--delete", config.project.origin[index].as_str(), dest.as_str()])
-                .output()
-            {
-                Ok(out) => out,
-                Err(e) => {
-                    eprintln!("failed to run rsync: {e}");
+            // Depending on what number is in the mode entry of the Vector the right safe is selected ["1", "/user/path/"]
+            match dest[1].as_str() {
+                "1" => {
+                    // normal safe
+                    // copy via rsync
+                    let _ = match Command::new("rsync")
+                        .args(["-a", "--delete", config.project.origin[index].as_str(), dest[1].as_str()])
+                        .output()
+                    {
+                        Ok(out) => out,
+                        Err(e) => {
+                            eprintln!("failed to run rsync: {e}");
+                            return;
+                        }
+                    };
+                    //println!("{}", out.status);
+                }
+                "2" => {
+                    // Tailscale
+                    println!("++ safe via tailscale");
+                }
+                "3" => {
+                    // SSH
+                    println!("++ safe via SSH");
+                }
+                _ => {
+                    println!("corrupted config file.");
                     return;
                 }
-            };
-            //println!("{}", out.status);
+            }
         }
 
         index = index + 1;
@@ -309,7 +342,7 @@ pub fn open_toml()-> Result<Config,()> {
 }
 
 // Pause until enter is pressed
-fn pause() {
+pub fn pause() {
     let mut buf = String::new();
     io::stdin()
         .read_line(&mut buf)
@@ -332,23 +365,34 @@ fn write_new_config () {
     let path = "projects_test.toml";
     let mut doc = DocumentMut::new();
 
+    // empty arrays which can be filled afterwards
+    let empty_array = || Item::Value(Value::Array(Array::new()));
+
+    // [General] Table
     let mut table_general = Table::new();
     table_general.insert("amount", 0.into());
-    table_general.insert("version", "0.1".into());
-    table_general.insert("developer", "quietlean".into());
+    table_general.insert("daytime", empty_array());
+    table_general.insert("weekday", empty_array());
+    table_general.insert("monthday", empty_array());
 
+    // [Settings]
+    let mut table_settings = Table::new();
+    table_settings.insert("notifications", 1.into());
+    table_settings.insert("manual_input", 0.into());
 
-    // This Table contains the Key names and empty arrays which can be filled afterwards
-    let empty_array = || Item::Value(Value::Array(Array::new()));
+    // [Project]
     let mut table_project = Table::new();
     table_project.insert("name", empty_array());
     table_project.insert("origin", empty_array());
     table_project.insert("destination", empty_array());
     table_project.insert("daemon", empty_array());
 
+    // The tables are added to the Document
     doc["general"] = Item::Table(table_general);
+    doc["settings"] = Item::Table(table_settings);
     doc["project"] = Item::Table(table_project);
 
+    // The Document is written into the toml
     if let Err(error) = std::fs::write(path, doc.to_string()) {
         println!("Config File couldnt be renewt: {}", error);
     }
@@ -368,9 +412,20 @@ fn change_toml (proj: Project, amount: i64) -> Result<(), Box<dyn Error>>{
     // Toml can only take Arrays
 
     let mut arr = Array::new();
-    for entry in proj.destination {
-        arr.push(vec_to_array(entry));
+
+    // proj.destination = [[["1", "/user/path/"], ["2", "device-in-tailnet"]], ...]
+    // destinations = [["1", "/user/path/"], ["2", "device-in-tailnet"]]
+    for destinations in proj.destination {
+        // dest = ["1", "/user/path/"]
+        let mut arr_sub = Array::new();
+        for dest in destinations {
+            arr_sub.push(vec_to_array(dest));
+        }
+
+        arr.push(arr_sub);
     }
+
+
     // The struct is serealized to toml table
     //let mut doc = DocumentMut::new();
 
@@ -397,56 +452,70 @@ fn change_toml (proj: Project, amount: i64) -> Result<(), Box<dyn Error>>{
     Ok(())
 }
 
-fn pick_folder () -> Option<String> {
-    let out = Command::new("osascript")
-            .arg("-e")
-            .arg(r#"POSIX path of (choose folder with prompt "Pick a folder")"#)
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None; // user cancelled
-        }
-        let path = String::from_utf8_lossy(&out.stdout);
-        Some(path.trim().trim_end_matches('/').to_string())
+// Function for using the directory picker
+pub fn pick_folder_ext () -> Option<String> {
+
+    // The exectuable which opens the picker is called
+    // It prints the path to stdout which is collected by ".output"
+    let out = match Command::new("/Users/lengather/Code-Lokal/file_pick/target/debug/file_pick").output() {
+            Ok(out) => out,
+            Err(e) => {
+                eprintln!("failed to pick folder: {e}");
+                return None;
+            }
+        };
+
+    // check if the picking worked
+    if !out.status.success() {
+        eprintln!(
+            "child_program failed with status {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        return None;
+    }
+
+    // out is converted from Option to a String
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+    if path.is_empty() {
+        None // user cancelled, or program printed nothing
+    } else {
+        Some(path)
+    }
 }
+
+
 
 // === ADDING PROJECT ===
 
-fn add_project(mut config: Config, manual: &str){
+fn add_project(mut config: Config, mut manual: &str){
 
     // I cloud also just write into the config thats passed
     let mut new_proj = config.project.clone();
 
-    let input_string = print_input("\x1b[93;1mPlease enter a projectname:\x1b[0m");
+    // 1
+    let input_string = print_input("[1/4] \x1b[38;5;50;1mPlease enter a projectname:\x1b[0m");
     new_proj.name.push(input_string);
 
-    let mut new_path = String::new();
+    // This one is gonna be reused for destination
+    let new_path;
 
+    // 2
     // ORIGIN ---------------------------
 
     // If manual is turned off in the settings
     if manual == "n" {
-        println!("\x1b[93;1mPlease select the directory you want to safe.\x1b[0m \x1b[1;37m[Press Enter]\x1b[0m");
+        println!("[2/4] \x1b[38;5;50;1mPlease select the directory you want to safe.\x1b[0m \x1b[1;37m[Press Enter]\x1b[0m");
         pause();
 
-        // Finder is opend
-        //let mut new_path = String::new();
-        //let folder = rfd::FileDialog::new()
-        //        .set_title("Pick a folder")
-        //        .pick_folder();
+        // HIER JZ ANDERES PROGRAMM RUFEN
 
-        //let folder = DialogBuilder::file()
-        //    .add_filter("All Files", &["*"])
-        //    .open_single_dir()
-        //    .show()
-        //    .unwrap();
-        //.ok();
-
-        let folder = pick_folder();
+        let folder = pick_folder_ext();
 
         new_path = match folder {
             Some(path) => {
-                println!("Selected: {}", path);
+                println!("Selected origin: {}", path);
                 path
             },
             None => {
@@ -456,7 +525,7 @@ fn add_project(mut config: Config, manual: &str){
         };
     } else {
         // Manual input of origin path
-        let mut path_str = print_input("\x1b[93;1mPlease enter the full path to the directory you want to safe:\x1b[0m");
+        let mut path_str = print_input("[2/4] \x1b[38;5;50;1mPlease enter the full path to the directory you want to safe:\x1b[0m");
 
         loop {
 
@@ -466,11 +535,11 @@ fn add_project(mut config: Config, manual: &str){
                     if result == true {
                         break;
                     } else {
-                        path_str = print_input("\x1b[93;1mThe path you entered doesn't exist. Please enter another path:\x1b[0m");
+                        path_str = print_input("[2/4] \x1b[38;5;50;1mThe path you entered doesn't exist. Please enter another path:\x1b[0m");
                     }
                 }
                 Err(_)=> {
-                    path_str = print_input("\x1b[93;1mThe path you entered doesn't exist. Please enter another path:\x1b[0m");
+                    path_str = print_input("[2/4] \x1b[38;5;50;1mThe path you entered doesn't exist. Please enter another path:\x1b[0m");
                 }
             }
         }
@@ -481,85 +550,81 @@ fn add_project(mut config: Config, manual: &str){
 
     new_proj.origin.push(new_path);
 
-    // Destination -----------------------------
-
-    if manual == "n" {
-        println!("\x1b[93;1mPlease select the directory you want to safe the original to.\x1b[0m \x1b[1;37m[Press Enter]\x1b[0m");
-        pause();
-    }
 
 
+    // 3
+    // Destination -----------------------------------------------------------------------------------
+
+    // Destination is gonna be safed in there in all cases
     let mut dest_vec = Vec::new();
 
+    println!("\n[3/4] \x1b[38;5;50;1mDestination\x1b[0m");
+    println!("\x1b[1mThere are multiple options where and how to safe your origin-directory. Select one:\x1b[0m");
+    println!("  \x1b[1m1.\x1b[0m Safe to directory on your device or your network");
+    println!("  \x1b[1m2.\x1b[0m Safe via Tailscale (using Taildrop)");
+    println!("  \x1b[1m3.\x1b[0m Safe via SSH");
 
-    // Loop for destination selection
+    let mut choice;
+
+    // Loop that selects chosen destination selection
     loop {
 
-        if manual == "n" {
-            loop {
+        choice = print_input("");
 
-                let folder = pick_folder();
+        match choice.trim() {
+            "1" => {
+                match com::setup_destination(manual, &new_proj) {
+                    Some(dest) => {
 
-                new_path = match folder {
-                    Some(path) => {
-                        println!("Selected: {}", path);
-                        path
-                    },
+                        dest_vec.push(dest);
+                    }
                     None => {
-                        println!("New project cancled. Back to Menu.");
                         return;
-                    },
-                };
-
-                let index = new_proj.name.len();
-
-                // checks if the destination path (new_path) and the origin are the same
-                if new_path != new_proj.origin[index-1] {
-                    break;
-                }
-
-                println!("\x1b[93;1mOrigin and destination can not be the same directory. Select a different directory!\x1b[0m \x1b[1;37m[Press Enter]\x1b[0m");
-                pause();
-            }
-        } else {
-            // Manual input of destination path
-            let mut path_str = print_input("\x1b[93;1mPlease enter the full path to the directory you want to safe the original to:\x1b[0m");
-
-            loop {
-
-
-
-                let path = Path::new(&path_str);
-                match path.try_exists() {
-                    Ok(result) => {
-                        if result == true {
-                            break;
-                        } else {
-                            path_str = print_input("\x1b[93;1mThe path you entered doesn't exist. Please enter another path:\x1b[0m");
-                        }
-                    }
-                    Err(_)=> {
-                        path_str = print_input("\x1b[93;1mThe path you entered doesn't exist. Please enter another path:\x1b[0m");
                     }
                 }
+                //break;
             }
+            "2" => {
+                match com::setup_tailscale_ssh(2) {
+                    Some(dest) => {
+                        //println!("++ tailscale worked");
+                        //println!("++ mode: {}, dest: {}", dest[0], dest[1]);
 
-            new_path = path_str;
+                        dest_vec.push(dest);
+
+                    }
+                    None => {
+                        return;
+                    }
+                }
+                //break;
+            }
+            "3" => {
+                match com::setup_tailscale_ssh(3) {
+                    Some(_) => {
+                        println!("++ SSH worked");
+                    }
+                    None => {
+                        return;
+                    }
+                }
+                //break;
+            }
+            _ => {
+            choice = print_input("\x1b[38;5;50;1mEnter valid input!\x1b[0m")
+            }
         }
 
-
-
-
-         // Path is added to destination Vector
-        dest_vec.push(new_path);
-
-
-        let mut choice = print_input("\x1b[93;1mDo you want to add an additional Destination? [y/n]\x1b[0m");
+        //let mut choice = print_input("[3/4] \x1b[38;5;50;1mDo you want to add an additional Destination? [y/n]\x1b[0m");
+        let mut choice = print_input("\x1b[1mDo you want to add an additional Destination? [y/n]\x1b[0m");
 
         loop {
             match choice.trim() {
                 "y" => {
                     //println!("Adding additional Destionation");
+                    println!("  \x1b[1m1.\x1b[0m Safe to directory on your device or your network");
+                    println!("  \x1b[1m2.\x1b[0m Safe via Tailscale (using Taildrop)");
+                    println!("  \x1b[1m3.\x1b[0m Safe via SSH");
                     break;
                 },
                 "n" => {
@@ -567,7 +632,7 @@ fn add_project(mut config: Config, manual: &str){
                 }
                 _ => {
                     //println!("Enter valid Input!");
-                    choice = print_input("\x1b[93;1mEnter valid input! [y/n]\x1b[0m");
+                    choice = print_input("[3/4] \x1b[38;5;50;1mEnter valid input! [y/n]\x1b[0m");
                 }
             }
         }
@@ -575,20 +640,67 @@ fn add_project(mut config: Config, manual: &str){
         if choice == "n" {
             break;
         }
+    }
+
+    // If 1 (regular destination) was selected
+    if choice == "1"{
+
+
 
     }
 
 
+
+
     new_proj.destination.push(dest_vec);
 
+    // 4
     // Dameon mode --------------------------------------
 
-    let mut choice = print_input("\x1b[93;1mDo you want to enable the daemon mode? [y/n]\x1b[0m");
+    let mut choice = print_input("[4/4] \x1b[38;5;50;1mDo you want to enable auto-safe? [y/n]\x1b[0m");
     //println!("received = {}", choice);
     loop {
         match choice.trim() {
             "y" => {
-                println!("Daemon activated");
+                // Choices for the auto-safe/daemon mode
+                println!("\x1b[1mThere are multiple options how to use auto-safe. Enter the number of the mode you want to use.\x1b[0m");
+                println!("  \x1b[1m1.\x1b[0m Safe when the directory is modified");
+                println!("  \x1b[1m2.\x1b[0m Safe once a day (time can be set)");
+                println!("  \x1b[1m3.\x1b[0m Safe once a week (weekday and time can be set)");
+                println!("  \x1b[1m4.\x1b[0m Safe once a month (day and time can be set)");
+                println!("  \x1b[1m5.\x1b[0m Don't use auto-safe");
+
+                loop {
+
+                    let mode = print_input("");
+
+                    match mode.trim() {
+                        "1" => {
+                            println!("mode 1");
+                            break;
+                        }
+                        "2" => {
+                            println!("mode 2");
+                            break;
+                        }
+                        "3" => {
+                            println!("mode 3");
+                            break;
+                        }
+                        "4" => {
+                            println!("mode 4");
+                            break;
+                        }
+                        "5" => {
+                            break;
+                        }
+                        _ => {
+                            println!("\x1b[1mEnter valid input!\x1b[0m");
+                        }
+                    }
+                }
+
+
                 new_proj.daemon.push(1);
                 break;
             },
@@ -598,10 +710,12 @@ fn add_project(mut config: Config, manual: &str){
             }
             _ => {
                 //println!("Enter valid Input!");
-                choice = print_input("\x1b[93;1mEnter valid input! [y/n]\x1b[0m");
+                choice = print_input("\x1b[1mEnter valid input! [y/n]\x1b[0m");
             }
         }
     }
+
+    // Config file is changed -----------------------------------------------------
 
     config.general.amount = config.general.amount + 1;
 
@@ -612,19 +726,31 @@ fn add_project(mut config: Config, manual: &str){
         println!("error while adding: {}", error);
     }
 
+    // Overview of the new project -----------------------------------------------
+
     // the position if the new project entrys in the Vectors
     // used to print the new entrys
-    let position = new_proj.name.len() - 1;
+    let position = &new_proj.name.len() - 1;
 
     println!("\n");
     println!("\x1b[107;30mA new project has been created.\x1b[0m");
-    println!("name:  \x1b[1;95m{}\x1b[0m", new_proj.name[position]);
-    println!("origin:  \x1b[1;95m{}\x1b[0m", new_proj.origin[position]);
+    println!("name:  \x1b[1;95m{}\x1b[0m", &new_proj.name[position]);
+    println!("origin:  \x1b[1;95m{}\x1b[0m", &new_proj.origin[position]);
     println!("selected destinations:");
     //println!("destination: \x1b[1;95m{}\x1b[0m", new_proj.destination);
     let mut count = 1;
-    for x in &new_proj.destination[position] {
-        println!("{}]  \x1b[1;95m{}\x1b[0m",count , x);
+    for dest in &new_proj.destination[position] {
+
+        match dest[0].as_str() {
+            "1" => println!("{}]  \x1b[1;95m{}\x1b[0m",count , dest[1]), // normal destination
+            "2" => println!("{}]  \x1b[1;95m{}\x1b[0m (Tailscale)",count , dest[1]), // Tailscale
+            "3" => println!("{}]  \x1b[1;95m{}\x1b[0m (SSH)",count , dest[1]), // SSH
+            _ => {
+                println!("error while finishing up project");
+                return;
+            }
+        }
+
         count = count + 1;
     }
 }
@@ -810,17 +936,29 @@ pub fn view_projects (addiotional: &str) {
                 },
             };
 
+            println!("\x1b[107;30mProject Overview\x1b[0m");
+
             for proj in 0 .. amount {
                 println!("\x1b[1;95m{}]\x1b[0m {}", proj + 1, config.project.name[proj]);
 
                 let mut count = 1;
                 // In case only the names are wanted ("n")the rest is not printed
                 if addiotional == "y" {
-                    println!("  origin: ");
+                    println!("  \x1b[1morigin:\x1b[0m ");
                     println!("     {}", config.project.origin[proj]);
-                    println!("  destinations:");
-                    for x in &config.project.destination[proj] {
-                        println!("  {}] {}", count, x);
+                    println!("  \x1b[1mdestinations:\x1b[0m");
+
+                    for dest in &config.project.destination[proj] {
+                        //println!("  {}] {}", count, dest[1]);
+                        match dest[0].as_str() {
+                            "1" => println!("{}]  \x1b[1m{}\x1b[0m",count , dest[1]), // normal destination
+                            "2" => println!("{}]  \x1b[1m{}\x1b[0m (Tailscale)",count , dest[1]), // Tailscale
+                            "3" => println!("{}]  \x1b[1m{}\x1b[0m (SSH)",count , dest[1]), // SSH
+                            _ => {
+                                println!("error while finishing up project");
+                                return;
+                            }
+                        }
                         count = count + 1;
                     }
                     println!("\n");
@@ -854,7 +992,7 @@ pub fn art (){
           ' b. .       ,''      L.      `.            S'
              'B.'i'  ,Y,Y'@'. `/'`-  /F-\\'\\.   ,- ,_o''
                 '`-''  |_ _'        |_  |  `...---'
-                   \\. Fuck     da    System   |-
+                   \\.  Free             Earth  |-
                     `\\_        ,,L         ,,
                       ''f--'r'o' ''`---u--''
     \x1b[0m";
