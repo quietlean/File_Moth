@@ -6,6 +6,7 @@
 - > notifications -> struct anpassen
 - > logging
 - ssh einbauen -> struct anpassen
+- file-picker exe ins projekt packen
 
 # Ideas
 
@@ -120,3 +121,27 @@ $ tailscale file get /Users/ziegenhals7000/Movies --loop
 ```bash
 $ tailscale file cp --targets
 ```
+
+## tailscale directories schicken
+
+- es können nur einzelne datein von tailscale verschickt werden
+- > wenn ordner geschickt werden soll muss er als zip oder tar geschickt werden
+- dazu kommt natürlich, dass immer der gesamte ordner geschickt werden muss
+- **user recommendation:**
+- die handhabung der gesendeten ordner/datein sollte am Zielcomputer manuell eingestellt werden
+- datein landen in _Downloads_ können aber von tailscal verschoben werden
+- ebenfalls kann eingestellt werden, dass immer nur die neuste version gespeichert wird und alte gelöscht werden
+
+
+# Custom safe commands
+
+- man könnte im dest Vektor auch ein custom commands speichern 
+- user könnten einen eigenen safe command nutzen um projekte auf eigenem weg zu speichern
+
+# Destination Vektor
+
+Der aufbau vom Destination Vektor ist:
+
+Vec<String> = [safe-mode, Ziel, bundle/compression-mode] 
+
+-> custom command könnte noch dazu kommen

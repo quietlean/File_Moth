@@ -1,5 +1,5 @@
 [general]
-amount = 2
+amount = 0
 daytime = []
 weekday = []
 monthday = []
@@ -9,7 +9,7 @@ notifications = 1
 manual_input = 0
 
 [project]
-name = ["565677890", "Best project"]
-origin = ["/Users/lengather/Pictures/moth-test/uni", "/Users/lengather/Pictures/moth-test/furz"]
-destination = [[["1", "/Users/lengather/Pictures/moth-test/Bones"], ["2", "lens-blade"]], [["1", "/Users/lengather/Pictures/moth-test/dest-1"], ["2", "lens-blade"], ["1", "/Users/lengather/Pictures/moth-test/dest-3"]]]
-daemon = [1, 1]
+name = []
+origin = []
+destination = []
+daemon = []

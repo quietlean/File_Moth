@@ -11,18 +11,15 @@ mod utils;
 
 fn main() {
 
-    file_check();
-    art();
+    file_check();   // checking if config file exists
+    art();  // ascii art is printed
 
-    menu_print_intro();
+    menu_print_intro();  // menu is printed
 
     //utils::open_log();
 
     loop {
 
-        //let mut input = String::new();
-
-        //io::stdin().read_line(&mut input).expect("fehler aufgetreten");
         let input = utils::print_input("");
 
         match input.trim() {
@@ -37,7 +34,6 @@ fn main() {
                     },
                     Err(()) => println!("Error while opening config file."),
                 }
-
             },
             "2" => {
                 // safe a project
@@ -54,13 +50,8 @@ fn main() {
                 edit_projects();
             },
             "4" => {
-                //file_read is called. If error occurs in function it's passed back to Err and printed.
-                //if let Err(err) = utils::file_read() {
-                //    println!("Error: {}", err);
-                //    process::exit(1);
-                //}
 
-                view_projects("y");
+                view_projects("y"); // "y" means that the full overview is printed. "n" -> shortened overview
             },
             "5" => {
                 utils::settings();

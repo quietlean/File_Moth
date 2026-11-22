@@ -127,7 +127,10 @@ pub mod com {
                 }
             };
 
-            // out is a Vec<str> so we need to take out the stdout str and convert it to a String
+            // 'out' is a struct that contains stdout: Vec<u8> and stderr: Vec<u8>.
+            // Vec<u8> is used because the stdout/err is safed as byte-stream that is UTF-8 encoded (u8 = one byte).
+            // We want to take the stdout str and convert it to a String.
+
             let targets = String::from_utf8_lossy(&out.stdout);
             // Breaking up the target output in to its lines wich are safed in a Vector
             let target_lines: Vec<&str> = targets.lines().collect();
@@ -184,6 +187,37 @@ pub mod com {
             let mut dest = Vec::new();
             dest.push("2".to_string());
             dest.push(target_parts[1].to_string());
+
+            // Asking what typa packaging or compression should be used
+            println!("\x1b[1mTailscale can only send individual files. Choose how to bundle/compress the origin:\x1b[0m");
+            println!("  \x1b[1m1.\x1b[0m Bundle and compress using ZIP (works on all paltforms)");
+            println!("  \x1b[1m2.\x1b[0m Bundle using TAR (Linux & macOS)");
+            println!("  \x1b[1m3.\x1b[0m Bundle and compress using TAR and GZIP (Linux & macOS)");
+            input = print_input("");
+
+            // input on the bundle / compression mode
+            loop {
+                match input.trim() {
+                    "1" => {
+                        // ZIP
+                        dest.push("zip".to_string());
+                        break;
+                    }
+                    "2" => {
+                        // TAR
+                        dest.push("tar".to_string());
+                        break;
+                    }
+                    "3" => {
+                        // TAR
+                        dest.push("tar-gzip".to_string());
+                        break;
+                    }
+                    _ => {
+                        input = print_input("\x1b[1mEnter vaild input!\x1b[0m");
+                    }
+                };
+            }
 
             Some(dest)
 

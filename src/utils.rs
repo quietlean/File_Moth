@@ -1,18 +1,16 @@
 use std::io::{self};
 use std::io::Write;
-//use std::ops::ControlFlow::Continue;
-use std::thread::sleep;
 use std::{error::Error, fs::File};
 use std::time::Duration;
 //use csv_to_table::iter::CsvRecords;
 use indicatif::ProgressBar;
-//use toml_edit::Value::Array;
-//use toml_edit::Item::Table;
 use std::process::Command;
-use std::path::Path; //, PathBuf
+use std::path::{self, Path, PathBuf}; //, PathBuf
+use std::fs;
 use serde::Deserialize;
 use toml_edit::{Array, DocumentMut, Item, Table, Value}; //, value
 use mac_notification_sys::*; // Sending System Notifications
+use dir;
 //use rfd; // Opening Finder to select Folder
 //use native_dialog::{DialogBuilder}; // Also a crate to display file choosers
 
@@ -85,8 +83,7 @@ pub fn menu_print_intro(){
             config.general.amount
         },
         Err(()) => {
-            println!("New config file needs to be build");
-            write_new_config();
+            println!("error while opening config.");
             0
         },
     };
@@ -134,72 +131,149 @@ pub fn menu_print () {
 
 }
 
-pub fn loading(){
-
-    // spinner from the "indicatif" crate
-    let spinner = ProgressBar::new_spinner();
-    spinner.enable_steady_tick(Duration::from_millis(100));
-
-    sleep(Duration::from_secs(3));
-
-    spinner.finish();
-    println!("done xo");
-}
-
-pub fn copy(){
-
-    let path_og = "/Users/lengather/Pictures/Bones/";
-    let path_dest = "/Users/lengather/Pictures/furz";
-
-    let out = match Command::new("rsync")
-            .args(["-a", "--delete", path_og, path_dest])
-            .output()
-        {
-            Ok(out) => out,
-            Err(e) => {
-                eprintln!("failed to run rsync: {e}");
-                return;
-            }
-        };
-        println!("{}", out.status);
-}
-
-
-
-// Checks whether or not the project log file exists.
-pub fn file_check(){
-
-    let path = "projects_test.toml";
-    let path_check = Path::new(path);
+fn system_message (message: &str) {
 
     // I think this can only be done once -> otherwise error
     // tell macOS which app "owns" the notification first
-        let bundle = get_bundle_identifier_or_default("terminal"); // or "finder", your own bundle id, ...
-        if let Err(error) = set_application(&bundle){
-            println!("error: {}", error);
-        }
+    let bundle = get_bundle_identifier_or_default("terminal"); // or "finder", your own bundle id, ...
+    if let Err(error) = set_application(&bundle){
+        println!("error: {}", error);
+    }
 
     // Builds and sends a System Notification
     // When Terminal is in Scope (aka you have the terminal-window in focus) the message won't be shown
     let mut note = Notification::new();
     let note = note
         .content_image("/Users/lengather/Pictures/Bones/hello-fuckin-kitty-big-1.png")
-        .title("File Bee yo")
-        .message("Test Message EYOOOOOUU");
+        .title("File Moth")
+        .message(message);
 
     if let Err(error) = note.send() {
         println!("Notification couldnt be send: {}", error);
     }
+}
+
+// Checks whether or not the config file exists.
+pub fn file_check(){
+
+    let path_folder: PathBuf = dir::home_dir().expect("home directory not found").join(".config/file_moth");
+    let path_config: PathBuf = dir::home_dir().expect("home directory not found").join(".config/file_moth/file_moth_config.toml");
+
+    println!("++ Path: {}", &path_config.display());
+
+    //let path = "projects_test.toml";
+    //let path_folder = Path::new("~/.config/file_moth");
+    //let path_config = Path::new("~/.config/file_moth/file_moth_config.toml");
+    //let path_config_check = Path::new(path_config);
 
     //println!("test");
-    if path_check.exists(){
+    if path_folder.exists(){
         //If the log file is found the amount of projects needs to be checked.
-        //println!{"File exists."};
+        println!{"++ folder exists."};
     } else {
         // If the log file isn't found a new one is created.
-        println!("File not found.");
-        if let Err(error) = File::create(path) {
+        println!("config folder not found.");
+        if let Err(e) = fs::create_dir(path_folder) {
+            println!("error while creating folder: {}", e);
+        }
+    }
+
+    if path_config.exists() {
+        println!("++ config file exists");
+    }else {
+        println!("config file doesn't exist.");
+
+        if let Err(error) = File::create(&path_config) {
             println!("Error while creating config file: {}", error);
+        }
+    }
+
+    // If the config isn't correct Err is returned and a new one is created
+    match open_toml() {
+        Ok(_) => {
+            //string to int
+
+        },
+        Err(()) => {
+            println!("New config file needs to be build.");
+            write_new_config(&path_config);
+            println!("New config file has been created.");
+        },
+    };
+}
+
+// bundles and compresses files
+fn bundle_compress (dest: &Vec<String>, origin: &String) -> Option<String>{
+
+    let mut origin_path;
+
+    match dest[2].as_str() {
+        "zip" => {
+            origin_path = String::from(origin);
+            origin_path.push_str(".zip");
+
+            match Command::new("zip"). args(["-r", &origin_path.as_str(), origin]).output() {
+                Err(e) => {
+
+                    println!("Error while calling zip. Check if zip is available.");
+                    println!("error: {}", e);
+                }
+                Ok(out) => {
+
+                    if out.status.success() {
+                        //println!("++ zip has been succsesfully created: {}", String::from_utf8_lossy(&out.stdout));
+                    } else {
+                        eprintln!("\x1b[1mError during zip creation:\x1b[0m {}", String::from_utf8_lossy(&out.stderr));
+                    }
+                }
+            }
+
+            Some(origin_path)
+        }
+        "tar" => {
+            // tar -czf furz.tar furz
+            origin_path = String::from(origin);
+            origin_path.push_str(".tar");
+
+            match Command::new("tar"). args(["-czf", &origin_path.as_str(), origin]).output() {
+                Err(e) => {
+                    println!("Error while calling tar. Check if tar is available.");
+                    println!("error: {}", e);
+                }
+                Ok(out) => {
+                    if out.status.success() {
+                        println!("++ tar has been succsesfully created: {}", String::from_utf8_lossy(&out.stdout));
+                    } else {
+                        eprintln!("\x1b[1mError during tar creation:\x1b[0m {}", String::from_utf8_lossy(&out.stderr));
+                    }
+                }
+            }
+
+            Some(origin_path)
+        }
+        "tar-gzip" => {
+            origin_path = String::from(origin);
+            origin_path.push_str(".tgz");
+
+            match Command::new("tar"). args(["-czf", &origin_path.as_str(), origin]).output() {
+                Err(e) => {
+                    println!("Error while calling tar. Check if tar is available.");
+                    println!("error: {}", e);
+                }
+                Ok(out) => {
+                    if out.status.success() {
+                        println!("++ tgz has been succsesfully created: {}", String::from_utf8_lossy(&out.stdout));
+                    } else {
+                        eprintln!("\x1b[1mError during tar creation:\x1b[0m {}", String::from_utf8_lossy(&out.stderr));
+                    }
+                }
+            }
+
+            Some(origin_path)
+        }
+        _ => {
+            println!("config file is corrupted.");
+            None
         }
     }
 }
@@ -215,14 +289,15 @@ pub fn safe_dir (all: &str, config: Config){
 
     // Overview of all projects
     if all == "n" {
-        println!("\n\x1b[107;30mProject Overview:\x1b[0m");
-        view_projects("n");
+        //println!("\n\x1b[107;30mProject Overview:\x1b[0m");
         println!("\n");
+        view_projects("n");
+        //println!("\n");
         println!("Type [b] if you want to go back.");
     }
 
 
-
+    // retrieving the amount of projects
     // Array entrys can only be selected with usize numbers but amount is i64 -> its converted to usize
     let amount = match usize::try_from(config.general.amount) {
         Ok(v) => v,
@@ -238,7 +313,7 @@ pub fn safe_dir (all: &str, config: Config){
 
     // when user chooses to only safe one project
     if all == "n" {
-        let mut input = print_input("\x1b[93;1mEnter the Number of the project you want to safe.\x1b[0m");
+        let mut input = print_input("\x1b[38;5;50;1mEnter the Number of the project you want to safe:\x1b[0m");
 
         loop {
 
@@ -250,9 +325,9 @@ pub fn safe_dir (all: &str, config: Config){
                 Ok(num) => {
 
 
-                    // checking if the number is valid
+                    // checking if the number is bigger then amount or smaller then one -> invalid
                     if num > amount || num < 1 {
-                        input = print_input("\x1b[93;1mEnter valid input!\x1b[0m");
+                        input = print_input("\x1b[1mEnter valid input!\x1b[0m");
                         continue;
                     }
                      // index is calculated
@@ -261,7 +336,7 @@ pub fn safe_dir (all: &str, config: Config){
                     break;
                 }
                 Err(_) => {
-                    input = print_input("\x1b[93;1mEnter valid input!\x1b[0m");
+                    input = print_input("\x1b[1mEnter valid input!\x1b[0m");
                     continue;
                 }
             };
@@ -270,18 +345,19 @@ pub fn safe_dir (all: &str, config: Config){
         count = amount - 1;
     }
 
+
+    // The safe ------------------------------------------------
     while index <= count {
+        // Looping through all destinations of a single project
         for dest in &config.project.destination[index] {
 
-            // Depending on what number is in the mode entry of the Vector the right safe is selected ["1", "/user/path/"]
-            match dest[1].as_str() {
+            // Depending on what number is in the mode-entry (dest[0]) of the Vector the right safe is selected
+            // dest = ["1", "/user/path/", "zip"]
+            match dest[0].as_str() {
                 "1" => {
                     // normal safe
                     // copy via rsync
-                    let _ = match Command::new("rsync")
-                        .args(["-a", "--delete", config.project.origin[index].as_str(), dest[1].as_str()])
-                        .output()
-                    {
+                    let _ = match Command::new("rsync").args(["-a", "--delete", config.project.origin[index].as_str(), dest[1].as_str()]).output() {
                         Ok(out) => out,
                         Err(e) => {
                             eprintln!("failed to run rsync: {e}");
@@ -292,7 +368,52 @@ pub fn safe_dir (all: &str, config: Config){
                 }
                 "2" => {
                     // Tailscale
-                    println!("++ safe via tailscale");
+                    //println!("++ safe via tailscale");
+
+                    // the path of the bundled directory will be safed in there
+                    let origin_path;
+
+                    // bundling / compression
+                    match bundle_compress(dest, &config.project.origin[index]) {
+                        Some(path) => {
+                            origin_path = path;
+                        }
+                        None => {
+                            return;
+                        }
+                    }
+
+                    // destination string needs to be created before because the ":" needs to be appended just after the dest like: "my-device:"
+                    let mut destination = String::from(&dest[1]);
+                    destination.push(':');
+
+                    //spinner from the "indicatif" crate
+                    let spinner = ProgressBar::new_spinner();
+                    spinner.enable_steady_tick(Duration::from_millis(100));
+
+                    match Command::new("tailscale").args(["file", "cp", &origin_path, destination.as_str()]).output() {
+                        Err(e) => {
+                            spinner.finish();
+                            eprintln!("error while calling calling tailscale: {}", e);
+                        }
+                        Ok(out) => {
+                            spinner.finish();
+                            let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+                            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+
+                            //println!("++ status:{}", out.status);
+                            if out.status.success() {
+                                println!("++ tailscale call succsesfull: {}", stdout);
+                            } else {
+                                eprintln!("\x1b[1mTailscale couldn't safe the project:\x1b[0m {}", stderr);
+                                return;
+                            }
+
+
+                            //println!("++ stdout length: {}", stdout.len());
+                            //let message: Vec<&str> = stdout.split_whitespace().collect();
+                        }
+                    }
                 }
                 "3" => {
                     // SSH
@@ -312,6 +433,7 @@ pub fn safe_dir (all: &str, config: Config){
 
     if all == "n" {
         println!("The project has been safed.");
+        system_message("Project safed");
     } else {
         println!("All projects have been safed.");
     }
@@ -327,7 +449,20 @@ fn read_toml(path: &str) -> Result<Config, String> {
 //open up the project toml
 pub fn open_toml()-> Result<Config,()> {
 
-    match read_toml("projects_test.toml") {
+    let path_config: PathBuf = dir::home_dir().expect("home directory not found").join(".config/file_moth/file_moth_config.toml");
+
+    let path_str;
+    match path_config.to_str() {
+        Some(s) => {
+            path_str = s;
+        }
+        None => {
+            eprintln!("Path is not valid UTF-8");
+            return Err(())
+        },
+    }
+
+    match read_toml(&path_str) {
         Ok(config) => {
 
             //println!("{config:#?}");
@@ -360,9 +495,9 @@ fn vec_to_array<T: Into<Value>>(vec: Vec<T>) -> Array{
     return arr;
 }
 
-fn write_new_config () {
+fn write_new_config (path: &PathBuf) {
 
-    let path = "projects_test.toml";
+    //let path = "projects_test.toml";
     let mut doc = DocumentMut::new();
 
     // empty arrays which can be filled afterwards
@@ -399,9 +534,21 @@ fn write_new_config () {
 }
 
 fn change_toml (proj: Project, amount: i64) -> Result<(), Box<dyn Error>>{
-    let path = "projects_test.toml";
+    //let path = "~/.config/file_moth/file_moth_config.toml";
+    let path_config: PathBuf = dir::home_dir().expect("home directory not found").join(".config/file_moth/file_moth_config.toml");
+
+    let path_str;
+    match path_config.to_str() {
+        Some(s) => {
+            path_str = s;
+        }
+        None => {
+            eprintln!("Path is not valid UTF-8");
+            return Err("Error while reading path".into());
+        },
+    }
     // 1. Read the raw file as a string
-    let content = std::fs::read_to_string(path).map_err(|e| format!("read error: {e}"))?;
+    let content = std::fs::read_to_string(&path_str).map_err(|e| format!("read error: {e}"))?;
 
     // 2. Parse into a mutable document
     let mut doc = content.parse::<DocumentMut>().map_err(|e| format!("parse error: {e}"))?;
@@ -445,7 +592,7 @@ fn change_toml (proj: Project, amount: i64) -> Result<(), Box<dyn Error>>{
     doc["general"]["amount"] = toml_edit::value(amount);
 
     //println!("++ create new doc");
-    std::fs::write(path, doc.to_string())?;
+    std::fs::write(&path_str, doc.to_string())?;
 
     //println!("++ wrtiten to toml");
 
@@ -489,7 +636,7 @@ pub fn pick_folder_ext () -> Option<String> {
 
 // === ADDING PROJECT ===
 
-fn add_project(mut config: Config, mut manual: &str){
+fn add_project(mut config: Config, manual: &str){
 
     // I cloud also just write into the config thats passed
     let mut new_proj = config.project.clone();
@@ -743,7 +890,7 @@ fn add_project(mut config: Config, mut manual: &str){
 
         match dest[0].as_str() {
             "1" => println!("{}]  \x1b[1;95m{}\x1b[0m",count , dest[1]), // normal destination
-            "2" => println!("{}]  \x1b[1;95m{}\x1b[0m (Tailscale)",count , dest[1]), // Tailscale
+            "2" => println!("{}]  \x1b[1;95m{}\x1b[0m (Tailscale + {})",count , dest[1], dest[2]), // Tailscale
             "3" => println!("{}]  \x1b[1;95m{}\x1b[0m (SSH)",count , dest[1]), // SSH
             _ => {
                 println!("error while finishing up project");
@@ -779,7 +926,7 @@ fn delete_project (mut config: Config){
     };
 
     // The index of the project in the array
-    let mut index = 0;
+    let index;
     let mut choice_all = "n";
     let mut input = print_input("\x1b[93;1mEnter the Number of the project you want to delete. If you want to delte all projects enter [all].\x1b[0m");
 
@@ -951,9 +1098,9 @@ pub fn view_projects (addiotional: &str) {
                     for dest in &config.project.destination[proj] {
                         //println!("  {}] {}", count, dest[1]);
                         match dest[0].as_str() {
-                            "1" => println!("{}]  \x1b[1m{}\x1b[0m",count , dest[1]), // normal destination
-                            "2" => println!("{}]  \x1b[1m{}\x1b[0m (Tailscale)",count , dest[1]), // Tailscale
-                            "3" => println!("{}]  \x1b[1m{}\x1b[0m (SSH)",count , dest[1]), // SSH
+                            "1" => println!("{}]  {}",count , dest[1]), // normal destination
+                            "2" => println!("{}]  {} (Tailscale + {})",count , dest[1], dest[2]), // Tailscale
+                            "3" => println!("{}]  {} (SSH)",count , dest[1]), // SSH
                             _ => {
                                 println!("error while finishing up project");
                                 return;
