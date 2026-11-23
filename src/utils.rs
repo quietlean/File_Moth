@@ -5,7 +5,7 @@ use std::time::Duration;
 //use csv_to_table::iter::CsvRecords;
 use indicatif::ProgressBar;
 use std::process::Command;
-use std::path::{self, Path, PathBuf}; //, PathBuf
+use std::path::{Path, PathBuf}; //, PathBuf
 use std::fs;
 use serde::Deserialize;
 use toml_edit::{Array, DocumentMut, Item, Table, Value}; //, value
@@ -18,13 +18,14 @@ use dir;
 //mod external;
 use crate::external::com;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     general: General,
     project: Project,
+    settings: Settings,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct General {
     amount: i64,
     daytime: Vec<i64>,
@@ -313,7 +314,7 @@ pub fn safe_dir (all: &str, config: Config){
 
     // when user chooses to only safe one project
     if all == "n" {
-        let mut input = print_input("\x1b[38;5;50;1mEnter the Number of the project you want to safe:\x1b[0m");
+        let mut input = print_input("\x1b[1mEnter the Number of the project you want to safe:\x1b[0m");
 
         loop {
 
@@ -533,8 +534,11 @@ fn write_new_config (path: &PathBuf) {
     }
 }
 
-fn change_toml (proj: Project, amount: i64) -> Result<(), Box<dyn Error>>{
+fn change_toml (config: Config) -> Result<(), Box<dyn Error>>{
     //let path = "~/.config/file_moth/file_moth_config.toml";
+    //let proj = config.project;
+    //let amount = config.general.amount;
+
     let path_config: PathBuf = dir::home_dir().expect("home directory not found").join(".config/file_moth/file_moth_config.toml");
 
     let path_str;
@@ -562,7 +566,7 @@ fn change_toml (proj: Project, amount: i64) -> Result<(), Box<dyn Error>>{
 
     // proj.destination = [[["1", "/user/path/"], ["2", "device-in-tailnet"]], ...]
     // destinations = [["1", "/user/path/"], ["2", "device-in-tailnet"]]
-    for destinations in proj.destination {
+    for destinations in config.project.destination {
         // dest = ["1", "/user/path/"]
         let mut arr_sub = Array::new();
         for dest in destinations {
@@ -576,20 +580,35 @@ fn change_toml (proj: Project, amount: i64) -> Result<(), Box<dyn Error>>{
     // The struct is serealized to toml table
     //let mut doc = DocumentMut::new();
 
-    // creating table
-    let mut new_table = Table::new();
-    new_table.insert("name", vec_to_array(proj.name).into());
-    new_table.insert("origin", vec_to_array(proj.origin).into());
-    new_table.insert("destination", arr.into());
-    new_table.insert("daemon", vec_to_array(proj.daemon).into());
+    //creating General table
+    let mut table_general = Table::new();
+    table_general.insert("amount", config.general.amount.into());
+    table_general.insert("daytime", vec_to_array(config.general.daytime).into());
+    table_general.insert("weekday", vec_to_array(config.general.weekday).into());
+    table_general.insert("monthday", vec_to_array(config.general.monthday).into());
+
+    // creating Settings table
+    let mut table_settings = Table::new();
+    table_settings.insert("notifications", config.settings.notifications.into());
+    table_settings.insert("manual_input", config.settings.manual_input.into());
+
+    // creating Project table
+    let mut table_proj = Table::new();
+    table_proj.insert("name", vec_to_array(config.project.name).into());
+    table_proj.insert("origin", vec_to_array(config.project.origin).into());
+    table_proj.insert("destination", arr.into());
+    table_proj.insert("daemon", vec_to_array(config.project.daemon).into());
 
     //println!("++ struct to table");
+    // New Table General
+    doc["general"] = Item::Table(table_general);
+
+    // New Table Settigns
+    doc["settings"] = Item::Table(table_settings);
 
     // New Table is inserted into the document
-    doc["project"] = Item::Table(new_table);
+    doc["project"] = Item::Table(table_proj);
 
-    // Amount is changed + 1
-    doc["general"]["amount"] = toml_edit::value(amount);
 
     //println!("++ create new doc");
     std::fs::write(&path_str, doc.to_string())?;
@@ -604,7 +623,7 @@ pub fn pick_folder_ext () -> Option<String> {
 
     // The exectuable which opens the picker is called
     // It prints the path to stdout which is collected by ".output"
-    let out = match Command::new("/Users/lengather/Code-Lokal/file_pick/target/debug/file_pick").output() {
+    let out = match Command::new("./file_pick_macos").output() {
             Ok(out) => out,
             Err(e) => {
                 eprintln!("failed to pick folder: {e}");
@@ -868,8 +887,10 @@ fn add_project(mut config: Config, manual: &str){
 
     let proj_pass = new_proj.clone();
 
+    config.project = proj_pass;
+
     // the finished Project and the new amount are passed to adding function
-    if let Err(error) = change_toml(proj_pass, config.general.amount) {
+    if let Err(error) = change_toml(config) {
         println!("error while adding: {}", error);
     }
 
@@ -917,7 +938,7 @@ fn delete_project (mut config: Config){
     println!("Type [b] if you want to go back.");
 
     // Array entrys can only be selected with usize numbers but amount is i64 -> its converted to usize
-    let mut amount = match usize::try_from(config.general.amount) {
+    let amount = match usize::try_from(config.general.amount) {
         Ok(v) => v,
         Err(_) => {
             println!("error during conversion of 'amount'");
@@ -987,7 +1008,8 @@ fn delete_project (mut config: Config){
                         config.project.daemon.remove(i);
                     }
                     println!("All projects have been removed");
-                    amount = 0;
+                    //amount = 0;
+                    config.general.amount = 0;
                     break;
                 } else {
                     // Removing project at index
@@ -997,7 +1019,8 @@ fn delete_project (mut config: Config){
                     config.project.daemon.remove(index);
 
                     println!("The project has been removed.");
-                    amount = amount - 1;
+                    //amount = amount - 1;
+                    config.general.amount = config.general.amount - 1;
                     break;
                 }
 
@@ -1012,8 +1035,8 @@ fn delete_project (mut config: Config){
         }
     }
 
-    let amount_int: i64 = amount as i64;
-    if let Err(error) = change_toml(config.project, amount_int) {
+    //let amount_int: i64 = amount as i64;
+    if let Err(error) = change_toml(config) {
         println!("Erorr while changing config file: {}", error);
     }
 
@@ -1121,10 +1144,90 @@ pub fn view_projects (addiotional: &str) {
 }
 
 pub fn settings () {
-    println!("\n  \x1b[107;30mEnter the number of the setting you want to adjust.\x1b[0m");
-    println!("  \x1b[1;94mn:\x1b[0m notifications  [\x1b[92mon\x1b[0m/off]");
-    println!("  \x1b[1;94mm:\x1b[0m manual input   [on/\x1b[95moff\x1b[0m]");
-    println!("  \x1b[1;94mb:\x1b[0m go back");
+
+    let mut config = match open_toml() {
+        Ok(config) => {
+            config
+        },
+        Err(()) => {
+            println!("error");
+            return;
+        },
+    };
+
+    loop {
+
+        println!("\n  \x1b[107;30mEnter the number of the setting you want to adjust. Enter [b] to go back.\x1b[0m");
+
+        // print settings depending on state
+        if config.settings.notifications == 0  {
+            // if "off"
+           println!("  \x1b[1;94m1:\x1b[0m notifications  [on/\x1b[95moff\x1b[0m]");
+        } else {
+            // if "on"
+            println!("  \x1b[1;94m1:\x1b[0m notifications  [\x1b[92mon\x1b[0m/off]");
+        }
+
+        if config.settings.manual_input == 0 {
+            // if "off"
+            println!("  \x1b[1;94m2:\x1b[0m manual input   [on/\x1b[95moff\x1b[0m]");
+        } else {
+            // if "on"
+            println!("  \x1b[1;94m2:\x1b[0m manual input   [\x1b[92mon\x1b[0m/off]");
+        }
+
+
+        //println!("  \x1b[1;94mb:\x1b[0m go back");
+
+
+        loop {
+            let input = print_input("");
+
+            match input.trim() {
+                "1" => {
+                    if config.settings.notifications == 0  {
+                        // if "off" turn "on"
+                       config.settings.notifications = 1;
+                    } else {
+                        // if "on" turn "off"
+                        config.settings.notifications = 0;
+                    }
+
+                    break;
+                }
+                "2" => {
+                    if config.settings.manual_input == 0  {
+                        // if "off" turn "on"
+                       config.settings.manual_input = 1;
+                    } else {
+                        // if "on" turn "off"
+                        config.settings.manual_input = 0;
+                    }
+                    break;
+                }
+                "b" => {
+                    return;
+                }
+                _ => {
+                    println!("\x1b[1mEnter valid input!\x1b[0m");
+                }
+            }
+        }
+
+        // writing the new settings into the config file
+        if let Err(e) = change_toml(config.clone()) {
+            println!("error while adjusting settings: {}", e);
+        }
+
+        // refreshing the settings menu with escape codes
+        // Go up one line (\x1b[1A) and delete the whole line (\x1b[2K)
+        // needs to be adjustet if more lines are added to the settings menu
+        print!("\x1b[0A\x1b[2K");
+        print!("\x1b[0A\x1b[2K");
+        print!("\x1b[0A\x1b[2K");
+        print!("\x1b[0A\x1b[2K");
+        print!("\x1b[0A\x1b[2K");
+    }
 }
 
 pub fn art (){
